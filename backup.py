@@ -70,24 +70,14 @@ def upload_to_gdrive(service, filepath, filename):
         file = service.files().create(
             body=file_metadata, 
             media_body=media,
-            fields='id'
+            fields='id',
+            supportsAllDrives=True
         ).execute()
         print(f"Upload successful. File ID: {file.get('id')}")
+        return True
     except Exception as e:
         print(f"Error uploading to Google Drive: {e}")
-
-def cleanup_local_backups():
-    """Deletes local backup files older than RETENTION_DAYS."""
-    print(f"Checking for local backups older than {RETENTION_DAYS} days...")
-    now = datetime.datetime.now().timestamp()
-    
-    # Using glob to find .sql.gz files in BACKUP_DIR
-    search_pattern = os.path.join(BACKUP_DIR, '*.sql.gz')
-    for filepath in glob.glob(search_pattern):
-        if os.stat(filepath).st_mtime < now - (RETENTION_DAYS * 86400):
-            print(f"Deleting old local backup: {filepath}")
-            os.remove(filepath)
-    print("Local cleanup finished.")
+        return False
 
 if __name__ == '__main__':
     # 1. Dump database and compress
@@ -95,13 +85,16 @@ if __name__ == '__main__':
     
     if backup_filepath:
         # 2. Upload to Google Drive (Upload Only approach)
+        upload_success = False
         try:
             gdrive_service = get_gdrive_service()
-            upload_to_gdrive(gdrive_service, backup_filepath, backup_filename)
+            upload_success = upload_to_gdrive(gdrive_service, backup_filepath, backup_filename)
         except Exception as e:
             print(f"Failed to initialize Google Drive service: {e}")
             
-        # 3. Clean up local backups
-        cleanup_local_backups()
+        # 3. Clean up the local backup immediately to save disk space
+        if os.path.exists(backup_filepath):
+            print(f"Removing local file to save space: {backup_filepath}")
+            os.remove(backup_filepath)
     else:
         print("Backup process aborted due to dump failure.")
