@@ -104,4 +104,45 @@ Agar script berjalan otomatis setiap jam 2 pagi, kita gunakan cron.
 
 ## Bagian 4: Setup Penghapus Otomatis (Google Apps Script)
 
-Karena script Python Anda hanya bisa *Upload*, jangan lupa pasang script `apps_script_cleaner.js` di [Google Apps Script](https://script.google.com/) menggunakan akun utama Anda, agar backup yang berumur di atas 30 hari di Google Drive otomatis terhapus. (Baca instruksi pemasangannya di dalam file `apps_script_cleaner.js`).
+Karena script Python Anda hanya bisa *Upload* (demi keamanan), Anda **wajib** memasang script `apps_script_cleaner.js` di [Google Apps Script](https://script.google.com/) menggunakan akun utama Anda. Script ini akan berjalan otomatis setiap hari untuk menghapus backup yang umurnya lebih dari 30 hari.
+
+### Langkah-langkah Instalasi:
+
+1. **Buka Google Apps Script**
+   - Pastikan Anda login ke akun Google (Google Workspace Anda).
+   - Kunjungi: [https://script.google.com/](https://script.google.com/)
+
+2. **Buat Proyek Baru**
+   - Klik tombol **New Project** (Proyek Baru) di sebelah kiri atas.
+   - Hapus kode bawaan (`function myFunction() {...}`).
+   - Buka file `apps_script_cleaner.js` di proyek ini, **Copy** seluruh isinya, dan **Paste** ke editor Apps Script tersebut.
+
+3. **Konfigurasi Folder ID**
+   - Di dalam kode yang baru Anda paste, cari variabel `folderId`.
+   - Ganti nilainya dengan ID Folder Google Drive / Shared Drive Anda (Sama seperti yang Anda isikan di `.env`).
+
+4. **Simpan Proyek**
+   - Klik ikon **Disket** (Save / Simpan).
+   - Beri nama proyek di bagian atas, misalnya "Auto Cleaner Backup".
+
+5. **Menguji Script (Test Run)**
+   - Pilih fungsi `deleteOldBackups` di menu atas (di sebelah tombol Debug).
+   - Klik tombol **Run** (Jalankan).
+   - Anda akan diminta memberikan "Authorization" (Otorisasi).
+     - Klik **Review Permissions**, pilih akun Google Anda.
+     - Jika ada peringatan "Google hasn't verified this app", klik **Advanced** (Lanjutan) lalu klik **Go to ... (unsafe)**.
+     - Klik **Allow** (Izinkan).
+   - Buka menu **Execution log** (Log Eksekusi) di bagian bawah layar untuk melihat apakah ada file lama yang dihapus atau dibatalkan karena tidak ada backup hari ini.
+
+6. **Membuat Jadwal Otomatis (Cron Job / Trigger)**
+   - Di menu sebelah kiri layar, klik ikon **Jam** ("Triggers" / Pemicu).
+   - Klik tombol biru **Add Trigger** (Tambahkan Pemicu) di kanan bawah.
+   - Atur pengaturannya sebagai berikut:
+     - *Choose which function to run:* **deleteOldBackups**
+     - *Choose which deployment should run:* **Head**
+     - *Select event source:* **Time-driven**
+     - *Select type of time based trigger:* **Day timer**
+     - *Select time of day:* **3am to 4am** *(Sangat disarankan memilih 1-2 jam SETELAH server Ubuntu Anda melakukan upload agar tidak bentrok).*
+   - Klik **Save** (Simpan).
+
+Selesai! Script pengaman Google Anda kini akan otomatis mengecek dan menghapus file usang setiap hari.
