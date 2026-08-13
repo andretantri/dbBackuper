@@ -41,11 +41,11 @@ def dump_database():
         filename = f"backup_{DB_NAME}_{date_str}.sql.gz"
         filepath = os.path.join(BACKUP_DIR, filename)
         # For Ubuntu, mysqldump is usually in /usr/bin/mysqldump or available globally
-        dump_cmd = f"mysqldump -h {DB_HOST} -u {DB_USER} -p'{DB_PASSWORD}' {DB_NAME} | gzip > {filepath}"
+        dump_cmd = f"set -o pipefail; mysqldump -h {DB_HOST} -u {DB_USER} -p'{DB_PASSWORD}' --single-transaction --quick {DB_NAME} | gzip > {filepath}"
     else:
         filename = f"backup_alldb_{date_str}.sql.gz"
         filepath = os.path.join(BACKUP_DIR, filename)
-        dump_cmd = f"mysqldump -h {DB_HOST} -u {DB_USER} -p'{DB_PASSWORD}' --all-databases | gzip > {filepath}"
+        dump_cmd = f"set -o pipefail; mysqldump -h {DB_HOST} -u {DB_USER} -p'{DB_PASSWORD}' --single-transaction --quick --all-databases | gzip > {filepath}"
         
     print(f"Starting database dump to {filepath}...")
     try:
