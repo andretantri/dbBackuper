@@ -1,0 +1,107 @@
+import os
+import subprocess
+import datetime
+import glob
+from dotenv import load_dotenv
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+
+# Load environment variables
+load_dotenv()
+
+# Database Config
+DB_HOST = os.getenv('DB_HOST')
+DB_USER = os.getenv('DB_USER')
+DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_NAME = os.getenv('DB_NAME') # Optional
+
+# Backup Config
+BACKUP_DIR = os.getenv('BACKUP_DIR')
+RETENTION_DAYS = int(os.getenv('RETENTION_DAYS', 30))
+
+# Google Drive Config
+GDRIVE_FOLDER_ID = os.getenv('GDRIVE_FOLDER_ID')
+SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE')
+
+def get_gdrive_service():
+    """Authenticates and returns the Google Drive API service."""
+    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    return build('drive', 'v3', credentials=creds)
+
+def dump_database():
+    """Dumps the database(s) using mysqldump and compresses it."""
+    date_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    
+    if not os.path.exists(BACKUP_DIR):
+        os.makedirs(BACKUP_DIR)
+        
+    if DB_NAME:
+        filename = f"backup_{DB_NAME}_{date_str}.sql.gz"
+        filepath = os.path.join(BACKUP_DIR, filename)
+        # For Ubuntu, mysqldump is usually in /usr/bin/mysqldump or available globally
+        dump_cmd = f"mysqldump -h {DB_HOST} -u {DB_USER} -p'{DB_PASSWORD}' {DB_NAME} | gzip > {filepath}"
+    else:
+        filename = f"backup_alldb_{date_str}.sql.gz"
+        filepath = os.path.join(BACKUP_DIR, filename)
+        dump_cmd = f"mysqldump -h {DB_HOST} -u {DB_USER} -p'{DB_PASSWORD}' --all-databases | gzip > {filepath}"
+        
+    print(f"Starting database dump to {filepath}...")
+    try:
+        # Use shell=True to allow pipe (|) operator
+        subprocess.run(dump_cmd, shell=True, check=True, executable='/bin/bash')
+        print("Database dump completed successfully.")
+        return filepath, filename
+    except subprocess.CalledProcessError as e:
+        print(f"Error during database dump: {e}")
+        return None, None
+
+def upload_to_gdrive(service, filepath, filename):
+    """Uploads a file to Google Drive."""
+    print(f"Uploading {filename} to Google Drive...")
+    file_metadata = {
+        'name': filename,
+        'parents': [GDRIVE_FOLDER_ID]
+    }
+    media = MediaFileUpload(filepath, mimetype='application/gzip', resumable=True)
+    
+    try:
+        file = service.files().create(
+            body=file_metadata, 
+            media_body=media,
+            fields='id'
+        ).execute()
+        print(f"Upload successful. File ID: {file.get('id')}")
+    except Exception as e:
+        print(f"Error uploading to Google Drive: {e}")
+
+def cleanup_local_backups():
+    """Deletes local backup files older than RETENTION_DAYS."""
+    print(f"Checking for local backups older than {RETENTION_DAYS} days...")
+    now = datetime.datetime.now().timestamp()
+    
+    # Using glob to find .sql.gz files in BACKUP_DIR
+    search_pattern = os.path.join(BACKUP_DIR, '*.sql.gz')
+    for filepath in glob.glob(search_pattern):
+        if os.stat(filepath).st_mtime < now - (RETENTION_DAYS * 86400):
+            print(f"Deleting old local backup: {filepath}")
+            os.remove(filepath)
+    print("Local cleanup finished.")
+
+if __name__ == '__main__':
+    # 1. Dump database and compress
+    backup_filepath, backup_filename = dump_database()
+    
+    if backup_filepath:
+        # 2. Upload to Google Drive (Upload Only approach)
+        try:
+            gdrive_service = get_gdrive_service()
+            upload_to_gdrive(gdrive_service, backup_filepath, backup_filename)
+        except Exception as e:
+            print(f"Failed to initialize Google Drive service: {e}")
+            
+        # 3. Clean up local backups
+        cleanup_local_backups()
+    else:
+        print("Backup process aborted due to dump failure.")
