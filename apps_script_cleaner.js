@@ -1,50 +1,99 @@
 /**
  * Google Apps Script untuk Menghapus File Lama (Google Drive Cleaner)
  * 
- * Sesuai kesepakatan arsitektur "Upload-Only", script ini akan dijalankan 
- * dari server Google secara otomatis, menjaga token server Anda tetap aman.
+ * Fitur Keamanan:
+ * Script ini HANYA akan menghapus file lama JIKA terdeteksi ada backup baru 
+ * yang berhasil diunggah dalam 24 jam terakhir. Ini mencegah hilangnya
+ * semua data jika server gagal melakukan backup selama berhari-hari.
  */
 
 function deleteOldBackups() {
-  // GANTI INI DENGAN ID FOLDER ANDA
+  // === KONFIGURASI ===
+  // GANTI INI DENGAN ID FOLDER SHARED DRIVE ANDA
   var folderId = 'your_gdrive_folder_id_here'; 
-  
   // Waktu retensi (dalam hari)
   var retentionDays = 30; 
+  // ===================
   
+  // Karena menggunakan Shared Drive, kita perlu menggunakan opsi supportsAllDrives
+  var optionalArgs = { supportsAllDrives: true, includeItemsFromAllDrives: true };
   var folder = DriveApp.getFolderById(folderId);
   var files = folder.getFiles();
   
   var now = new Date();
   var thresholdDate = new Date(now.getTime() - (retentionDays * 24 * 60 * 60 * 1000));
+  var oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
   
-  var count = 0;
+  var hasRecentBackup = false;
+  var filesToDelete = [];
   
+  // Lakukan pengecekan satu per satu
   while (files.hasNext()) {
     var file = files.next();
     var dateCreated = file.getDateCreated();
     
+    // Cek apakah ada file yang dibuat dalam 24 jam terakhir
+    if (dateCreated >= oneDayAgo) {
+      hasRecentBackup = true;
+    }
+    
+    // Kumpulkan file yang lebih tua dari threshold
     if (dateCreated < thresholdDate) {
-      Logger.log('Deleting file: ' + file.getName() + ' (Created: ' + dateCreated + ')');
-      file.setTrashed(true); // Pindahkan ke tong sampah (akan hilang dalam 30 hari otomatis)
-      count++;
+      filesToDelete.push(file);
     }
   }
   
-  Logger.log('Total files deleted: ' + count);
+  // FITUR KEAMANAN: Jangan hapus jika hari ini tidak ada backup!
+  if (!hasRecentBackup) {
+    Logger.log('BAHAYA: Tidak ada backup baru dalam 24 jam terakhir!');
+    Logger.log('Proses penghapusan dibatalkan untuk mencegah hilangnya data.');
+    
+    // Opsional: Anda bisa menambahkan script untuk mengirim email peringatan ke Anda di sini
+    // MailApp.sendEmail("email_anda@domain.com", "Backup Gagal!", "Tidak ada backup DB hari ini.");
+    
+    return; // Berhenti di sini
+  }
+  
+  // Jika aman (ada backup baru), lanjutkan penghapusan
+  Logger.log('Status Aman: Ditemukan backup baru hari ini. Melanjutkan pembersihan rutin.');
+  var count = 0;
+  
+  for (var i = 0; i < filesToDelete.length; i++) {
+    var fileToDelete = filesToDelete[i];
+    Logger.log('Menghapus file: ' + fileToDelete.getName() + ' (Dibuat: ' + fileToDelete.getDateCreated() + ')');
+    fileToDelete.setTrashed(true); // Pindah ke tong sampah
+    count++;
+  }
+  
+  Logger.log('Total file lama yang dihapus: ' + count);
 }
 
 /**
- * Cara Pemasangan:
- * 1. Buka https://script.google.com/
- * 2. Buat "New Project".
- * 3. Paste kode ini ke "Code.gs".
- * 4. Ganti 'your_gdrive_folder_id_here' dengan ID folder Drive Anda.
- * 5. Klik logo jam (Triggers).
- * 6. Tambahkan Trigger baru:
+ * PANDUAN CARA INSTALL GOOGLE APPS SCRIPT
+ * -----------------------------------------
+ * 1. Buka browser dan login ke akun Google (Google Workspace Anda).
+ * 2. Kunjungi: https://script.google.com/
+ * 3. Klik tombol "New Project" (Proyek Baru) di sebelah kiri atas.
+ * 4. Hapus kode bawaan (function myFunction() {...}), lalu PASTE semua kode di atas.
+ * 5. Ganti tulisan 'your_gdrive_folder_id_here' di atas dengan ID Folder Drive Anda.
+ * 6. Klik ikon Disket (Save / Simpan). Beri nama proyek misalnya "Auto Cleaner Backup".
+ * 
+ * MENGUJI SCRIPT:
+ * 1. Pilih fungsi `deleteOldBackups` di menu atas, lalu klik "Run" (Jalankan).
+ * 2. Anda akan diminta memberikan "Authorization" (Otorisasi).
+ * 3. Klik "Review Permissions", pilih akun Google Anda.
+ * 4. Jika ada peringatan "Google hasn't verified this app", klik "Advanced" (Lanjutan) lalu klik "Go to ... (unsafe)".
+ * 5. Klik "Allow" (Izinkan).
+ * 6. Buka menu "Execution log" (Log Eksekusi) di bagian bawah layar untuk melihat apakah statusnya aman atau tidak.
+ * 
+ * MEMBUAT JADWAL OTOMATIS (CRON JOB):
+ * 1. Di menu sebelah kiri layar, klik ikon Jam ("Triggers" / Pemicu).
+ * 2. Klik tombol biru "Add Trigger" (Tambahkan Pemicu) di kanan bawah.
+ * 3. Atur pengaturannya sebagai berikut:
  *    - Choose which function to run: deleteOldBackups
+ *    - Choose which deployment should run: Head
  *    - Select event source: Time-driven
  *    - Select type of time based trigger: Day timer
- *    - Select time of day: (Pilih waktu, misal 2am to 3am)
- * 7. Simpan trigger. Google akan meminta otorisasi akun.
+ *    - Select time of day: 3am to 4am (Pilih 1-2 jam SETELAH server Ubuntu Anda melakukan upload).
+ * 4. Klik "Save" (Simpan). Selesai! Script akan otomatis mengecek dan menghapus file lama setiap hari.
  */
