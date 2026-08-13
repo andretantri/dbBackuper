@@ -1,0 +1,22 @@
+# Environments
+.env
+.env.*
+!.env.example
+
+# Credentials
+credentials.json
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Backup Files
+*.sql
+*.sql.gz
+*.zip
+/backups/
