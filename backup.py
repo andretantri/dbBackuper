@@ -24,6 +24,9 @@ RETENTION_DAYS = int(os.getenv('RETENTION_DAYS', 30))
 GDRIVE_FOLDER_ID = os.getenv('GDRIVE_FOLDER_ID')
 SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE')
 
+# File Backup Config
+BACKUP_PATHS = os.getenv('BACKUP_PATHS')
+
 def get_gdrive_service():
     """Authenticates and returns the Google Drive API service."""
     SCOPES = ['https://www.googleapis.com/auth/drive.file']
@@ -57,6 +60,37 @@ def dump_database():
         print(f"Error during database dump: {e}")
         return None, None
 
+def compress_directories():
+    """Compresses the specified directories into a single tar.gz archive."""
+    if not BACKUP_PATHS:
+        print("No BACKUP_PATHS defined. Skipping file backup.")
+        return None, None
+        
+    date_str = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    filename = f"backup_files_{date_str}.tar.gz"
+    
+    if not os.path.exists(BACKUP_DIR):
+        os.makedirs(BACKUP_DIR)
+        
+    filepath = os.path.join(BACKUP_DIR, filename)
+    
+    # Split paths and remove empty strings/whitespace
+    paths = [p.strip() for p in BACKUP_PATHS.split(',') if p.strip()]
+    if not paths:
+        return None, None
+        
+    print(f"Starting directory compression to {filepath}...")
+    try:
+        # Create tar command. We use -czf (create, gzip, file)
+        # and append all paths to be compressed.
+        tar_cmd = ["tar", "-czf", filepath] + paths
+        subprocess.run(tar_cmd, check=True)
+        print("Directory compression completed successfully.")
+        return filepath, filename
+    except subprocess.CalledProcessError as e:
+        print(f"Error during directory compression: {e}")
+        return None, None
+
 def upload_to_gdrive(service, filepath, filename):
     """Uploads a file to Google Drive."""
     print(f"Uploading {filename} to Google Drive...")
@@ -80,21 +114,36 @@ def upload_to_gdrive(service, filepath, filename):
         return False
 
 if __name__ == '__main__':
+    try:
+        gdrive_service = get_gdrive_service()
+    except Exception as e:
+        print(f"Failed to initialize Google Drive service: {e}")
+        gdrive_service = None
+
     # 1. Dump database and compress
-    backup_filepath, backup_filename = dump_database()
+    backup_db_filepath, backup_db_filename = dump_database()
     
-    if backup_filepath:
-        # 2. Upload to Google Drive (Upload Only approach)
-        upload_success = False
-        try:
-            gdrive_service = get_gdrive_service()
-            upload_success = upload_to_gdrive(gdrive_service, backup_filepath, backup_filename)
-        except Exception as e:
-            print(f"Failed to initialize Google Drive service: {e}")
-            
-        # 3. Clean up the local backup immediately to save disk space
-        if os.path.exists(backup_filepath):
-            print(f"Removing local file to save space: {backup_filepath}")
-            os.remove(backup_filepath)
+    if backup_db_filepath and gdrive_service:
+        # 2. Upload Database to Google Drive
+        upload_to_gdrive(gdrive_service, backup_db_filepath, backup_db_filename)
+        
+        # Clean up local db backup immediately
+        if os.path.exists(backup_db_filepath):
+            print(f"Removing local file to save space: {backup_db_filepath}")
+            os.remove(backup_db_filepath)
     else:
-        print("Backup process aborted due to dump failure.")
+        print("Database backup process aborted or Drive service not available.")
+        
+    # 3. Compress files/directories
+    backup_files_filepath, backup_files_filename = compress_directories()
+    
+    if backup_files_filepath and gdrive_service:
+        # 4. Upload Files to Google Drive
+        upload_to_gdrive(gdrive_service, backup_files_filepath, backup_files_filename)
+        
+        # Clean up local files backup immediately
+        if os.path.exists(backup_files_filepath):
+            print(f"Removing local file to save space: {backup_files_filepath}")
+            os.remove(backup_files_filepath)
+    else:
+        print("Files backup process skipped, failed, or Drive service not available.")
